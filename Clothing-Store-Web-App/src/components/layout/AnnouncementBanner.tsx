@@ -6,29 +6,43 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, ChevronRight } from 'lucide-react';
 import { useLiveSettings } from '@/hooks/useRealtime';
 
+interface BannerSettings {
+  enabled: boolean;
+  text: string | null;
+  link: string | null;
+}
+
 export function AnnouncementBanner() {
-  const { getBanner, isLoading } = useLiveSettings();
-  const banner = getBanner();
+  const [banner, setBanner] = useState<BannerSettings | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isVisible, setIsVisible] = useState(true);
-  const [prevEnabled, setPrevEnabled] = useState(false);
 
-  // Track when banner becomes enabled to animate in
+  // Fetch banner settings on mount and periodically for "live" updates
   useEffect(() => {
-    if (banner?.enabled && !prevEnabled) {
-      setIsVisible(true);
-    }
-    setPrevEnabled(banner?.enabled ?? false);
-  }, [banner?.enabled, prevEnabled]);
+    const fetchBanner = async () => {
+      try {
+        const response = await fetch('/api/admin/settings');
+        const data = await response.json();
+        if (data.settings) {
+          setBanner({
+            enabled: data.settings.bannerEnabled || false,
+            text: data.settings.bannerText || null,
+            link: data.settings.bannerLink || null,
+          });
+        }
+      } catch (error) {
+        console.error('Failed to fetch banner settings:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-  // Don't render while loading or if banner is disabled/not configured
-  if (isLoading) return null;
-  if (!banner?.enabled || !banner.text) return null;
+    fetchBanner();
 
-  const handleDismiss = () => {
-    setIsVisible(false);
-    // Remember dismissal for the session
-    sessionStorage.setItem('banner-dismissed', 'true');
-  };
+    // Poll for updates every 30 seconds for "live" effect
+    const interval = setInterval(fetchBanner, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Check if previously dismissed this session
   useEffect(() => {
@@ -38,11 +52,26 @@ export function AnnouncementBanner() {
     }
   }, []);
 
+  const handleDismiss = () => {
+    setIsVisible(false);
+    sessionStorage.setItem('banner-dismissed', 'true');
+  };
+
+  // Don't render while loading or if banner is disabled/not configured
+  if (isLoading) return null;
+  if (!banner?.enabled || !banner.text) return null;
+
   const content = (
     <div className="bg-amber-400 text-black relative overflow-hidden">
       {/* Animated background pattern */}
       <div className="absolute inset-0 opacity-10">
-        <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(0,0,0,0.1)_25%,rgba(0,0,0,0.1)_50%,transparent_50%,transparent_75%,rgba(0,0,0,0.1)_75%)] bg-[length:20px_20px] animate-[stripe-move_1s_linear_infinite]" />
+        <div
+          className="absolute inset-0 animate-pulse"
+          style={{
+            backgroundImage: `linear-gradient(45deg, transparent 25%, rgba(0,0,0,0.1) 25%, rgba(0,0,0,0.1) 50%, transparent 50%, transparent 75%, rgba(0,0,0,0.1) 75%)`,
+            backgroundSize: '20px 20px',
+          }}
+        />
       </div>
 
       <div className="container mx-auto px-4 py-2.5 relative">
@@ -121,17 +150,34 @@ export function AnnouncementBanner() {
 
 // Hook to get banner height for adjusting navbar position
 export function useBannerHeight() {
-  const { getBanner, isLoading } = useLiveSettings();
-  const banner = getBanner();
+  const [banner, setBanner] = useState<BannerSettings | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
     const wasDismissed = sessionStorage.getItem('banner-dismissed') === 'true';
     setDismissed(wasDismissed);
+
+    const fetchBanner = async () => {
+      try {
+        const response = await fetch('/api/admin/settings');
+        const data = await response.json();
+        if (data.settings) {
+          setBanner({
+            enabled: data.settings.bannerEnabled || false,
+            text: data.settings.bannerText || null,
+            link: data.settings.bannerLink || null,
+          });
+        }
+      } catch (error) {
+        console.error('Failed to fetch banner settings:', error);
+      }
+    };
+
+    fetchBanner();
   }, []);
 
   // Banner height when visible (approx 44px for the banner content)
-  if (isLoading || !banner?.enabled || !banner.text || dismissed) {
+  if (!banner?.enabled || !banner.text || dismissed) {
     return 0;
   }
   return 44; // Approximate banner height in pixels
